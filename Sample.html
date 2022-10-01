@@ -1,0 +1,305 @@
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Language" content="zh-TW">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1,maximum-scale=1.0, user-scalable=yes">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="renderer" content="webkit|ie-comp|ie-stand">
+    <meta name="description"
+        content="綠界科技 ECPay 提供信用卡刷卡、超商代收及取貨付款、ATM轉帳...等多種金流收款服務，會員可於綠界網站建立收款網址或使用API程式串接，應用彈性，收款隔日起即撥款。支付找綠界，買賣無國界。">
+    <!-- 必填，限制 81-150 字 -->
+    <meta name="keywords" content="信用卡,ATM轉帳,超商代碼,超商條碼,applepay,googlepay,samsungpay,金流服務">
+    <title>綠界科技 ECPay - 第三方支付領導品牌</title>
+
+</head>
+
+<body>
+    <div class="order-info">
+        <div class="oi-lan-box">
+            <div class="oi-lan" style="text-align: right;">
+                <select id="Language">
+                    <option value="zh-TW">繁體中文</option>
+                    <option value="en-US">English</option>
+                </select>
+            </div>
+        </div>
+        <div id="ECPayPayment"></div><br />
+
+        <form action="" id="PayProcess" method="post">
+            <div style="text-align: center;">
+
+                <input id="PaymentType" name="PaymentType" type="hidden" value="" />
+                <input id="btnPay" type="button" class="btn single btn-gray-dark" value="確認付款" />
+            </div>
+            <br />
+            <div style="text-align: center;">
+                消費者選擇付款方式取得的PayToken : <input id="PayToken" name="PayToken" type="Text" size="50"
+                    value="" />
+            </div>
+            <p id="stauts"></p>
+        </form>
+    </div>
+</body>
+
+</html>
+<!-- 綠界科技 ECPay SDK 需引用JS 區塊 -->
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/node-forge@0.7.0/dist/forge.min.js"></script>
+<script src="https://ecpg.ecpay.com.tw/Scripts/sdk-1.0.0.js?t=20210121100116"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"
+    integrity="sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/aes.min.js"
+    integrity="sha512-4b1zfeOuJCy8B/suCMGNcEkMcQkQ+/jQ6HlJIaYVGvg2ZydPvdp7GY0CuRVbNpSxNVFqwTAmls2ftKSkDI9vtA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/pad-zeropadding.min.js"
+    integrity="sha512-FS/MSTtrD5TVhUDaSA3wpY/TZb76WRYxHZQgocbnrmu0gxCGctaUNgZJ58Qfe/J8VwpOzfmGyHc6559TeFb54Q=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script type="text/javascript">
+    const MerchantID = "3002607"; //2000132
+    const key = CryptoJS.enc.Latin1.parse('pwFHCqoQZGmho4w6'); //pwFHCqoQZGmho4w6  A123456789012345
+    const iv = CryptoJS.enc.Latin1.parse('EkRm7iFT261dpevs'); //EkRm7iFT261dpevs  B123456789012345
+    const orderID = '20220811008';
+
+    function aesEncrypt(data, key, iv) {
+
+        data = encodeURIComponent(JSON.stringify(data));
+        //console.log('測試出encodeURI', data);
+        //console.log('應該要encodeURI', '%7B%22Name%22%3A%22Test%22%2C%22ID%22%3A%22A123456789%22%7D');
+
+        const encrypted = CryptoJS.AES.encrypt(data, key, {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7,
+        });
+        return encrypted.toString();
+    }
+
+    //console.log(aesEncrypt({ "Name": "Test", "ID": "A123456789" }, key, iv));
+
+    function aesDecrypt(encrypted, key, iv) {
+        //解密
+
+        const decrypted = CryptoJS.AES.decrypt(encrypted, key, { iv: iv, padding: CryptoJS.pad.Pkcs7 });
+        const aesDecrypted = decrypted.toString(CryptoJS.enc.Utf8)
+        const uriDecode = decodeURIComponent(aesDecrypted);
+        //decrypted = decodeURI(decrypted);
+        //console.log('解密', uriDecode);
+        return uriDecode;
+    }
+
+
+
+</script>
+
+<script type="text/javascript">
+
+
+    function getToken() {
+        /**
+         * @see https://www.ecpay.com.tw/Content/files/gw_700.pdf
+        */
+        let Token = '';
+        const apiUrl = 'https://ecpg-stage.ecpay.com.tw/Merchant/GetTokenbyTrade';
+        const data = {
+            "PlatformID": "",
+            "MerchantID": "3002607",
+            "RememberCard": 1,
+            "PaymentUIType": 2,
+            "ChoosePaymentList": "1,3",
+            "OrderInfo": {
+                "MerchantTradeNo": orderID,
+                "MerchantTradeDate": "2022/08/11 16:59:12",
+                "TotalAmount": 100,
+                "ReturnURL": "http://localhost/ECPayPaymentGatewayKit_Web/Sample.html",
+                "TradeDesc": "測試",
+                "ItemName": "測試商品"
+            },
+            "CardInfo": {
+                "OrderResultURL": "http://localhost/ECPayPaymentGatewayKit_Web/"
+            },
+            "ATMInfo": {
+                "ExpireDate": 3
+            },
+            "CVSInfo": {
+                "StoreExpireDate": 10080
+            },
+            "ConsumerInfo": {
+                "MerchantMemberID": "test123456",
+                "Email": "frency@gmail.com",
+                "Phone": "0921565659",
+                "Name": "JerryLiu",
+                "CountryCode": "158"
+            }
+        };
+
+        $.ajax({
+            type: "POST",
+            async: false,
+            url: apiUrl,
+            dataType: "json",
+            contentType: 'application/json',
+            data: JSON.stringify({
+                "MerchantID": MerchantID,
+                "RqHeader": {
+                    "TimeStamp": Math.ceil(new Date().getTime() / 1000),
+                },
+                "Data": aesEncrypt(data, key, iv)
+            }),
+            success: function (data) {
+                $('#stauts').html('取得驗證碼成功!');
+                console.log('Response', data);
+            },
+            error: function (error) {
+                $('#stauts').text('取得驗證碼失敗!');
+                //console.log(error);
+            },
+        }).done(function (data) {
+            let Data_decode = JSON.parse(aesDecrypt(data.Data, key, iv));
+            console.log('Data', Data_decode);
+            Token = Data_decode.Token;
+
+        });
+
+        return Token;
+    }
+
+
+    //var token = getToken();
+
+    $(function () {
+
+        var Environment = 'STAGE'; //請設定要連線的環境: 測試 STAGE ,正式PROD
+        var envi = GetEnvi(Environment);
+        var _token = getToken(); //請設定你取到的廠商驗證碼
+
+        console.log('token', _token);
+        //初始化SDK畫面
+        ECPay.initialize(envi, 1, function (errMsg) {
+
+            if (_token === '') {
+                _token = prompt('請填入Token: ');
+            }
+
+            try {
+                ECPay.createPayment(_token, ECPay.Language.zhTW, function (errMsg) {
+                    //console.log('Callback Message: ' + errMsg);
+                    if (errMsg != null)
+                        ErrHandle(errMsg);
+                });
+                $('#Language').val(ECPay.Language.zhTW);
+            } catch (err) {
+                ErrHandle(err);
+            }
+        });
+
+        //切換SDK語系
+        $('#Language').on('change', function () {
+            try {
+                ECPay.createPayment(_token, $('#Language').val(), function (errMsg) {
+                    //console.log('Callback Message: ' + errMsg);
+                    if (errMsg != null)
+                        ErrHandle(errMsg);
+                });
+
+            } catch (err) {
+                ErrHandle(null);
+            }
+        });
+
+        //消費者選擇完成付款方式,取得PayToken
+        $('#btnPay').click(function () {
+
+            try {
+                ECPay.getPayToken(function (paymentInfo, errMsg) {
+                    const apiUrl = 'https://ecpg-stage.ecpay.com.tw/Merchant/CreatePayment';
+                    //console.log("response => getPayToken(paymentInfo, errMsg):", paymentInfo, errMsg);
+                    if (errMsg != null) {
+                        ErrHandle(errMsg);
+                        return;
+                    };
+                    $("#PayToken").val(paymentInfo.PayToken);
+                    console.log(paymentInfo);
+
+                    // start
+                    const data = {
+                        "MerchantID": MerchantID,
+                        "PayToken": paymentInfo.PayToken,
+                        "MerchantTradeNo": orderID
+                    }
+
+                    $.ajax({
+                        type: "POST",
+                        async: false,
+                        url: apiUrl,
+                        dataType: "json",
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            "MerchantID": MerchantID,
+                            "RqHeader": {
+                                "TimeStamp": Math.ceil(new Date().getTime() / 1000),
+                            },
+                            "Data": aesEncrypt(data, key, iv)
+                        }),
+                        success: function (data) {
+                            $('#stauts').html('傳送paytoken成功!');
+                            //console.log('Response', data);
+                        },
+                        error: function (error) {
+                            $('#stauts').text('傳送paytoken失敗!');
+                            //console.log(error);
+                        },
+                    }).done(function (data) {
+                        let Data_decode = JSON.parse(aesDecrypt(data.Data, key, iv));
+                        console.log('Response', data);
+                        console.log('3D 驗證網址', Data_decode.ThreeDInfo.ThreeDURL);
+                        window.open(Data_decode.ThreeDInfo.ThreeDURL);
+                    });
+
+                    // end
+
+
+                    //$("#PayProcess").submit();
+                    return true;
+                });
+            } catch (err) {
+                // ErrHandle(err);
+            }
+
+            return false;
+        });
+    });
+
+    function GetEnvi(env) {
+        var result = 'STAGE';
+        switch (env) {
+
+            case 'STAGE':
+                result = 'Stage';
+                break;
+            case 'PROD':
+                result = 'Prod';
+                break;
+        }
+        return result;
+    }
+
+    function ErrHandle(strErr) {
+
+        if (strErr != null) {
+            $('#ECPayPayment').append('<div style="text-align: center;"><label style="color: red;">' + strErr + '</label></div>');
+            console.log(strErr);
+        } else {
+            $('#ECPayPayment').append('<div style="text-align: center;"><label style="color: red;">Token取得失敗</label></div>');
+            console.log('Wrong');
+        }
+
+        //$('#btnPay').hide();
+    }
+</script>
